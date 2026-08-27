@@ -1,31 +1,46 @@
-# Ansible Overview
+# Ansible
 
-## Purpose
+How this lab uses Ansible to configure the three Ubuntu machines.
 
-Ansible provides host-level configuration management for the homelab. The Mac is the control machine. The three physical Ubuntu 26.04 nodes are managed hosts.
+If you only remember one thing: **you run Ansible from your Mac**, and it SSHs into the three nodes to make sure they look the way the playbooks say they should.
+
+## Big picture
+
+| Role | What it is in this lab |
+| --- | --- |
+| Control machine | Your Mac — where you run `ansible` / `ansible-playbook` |
+| Managed hosts | The three ThinkCentre PCs running Ubuntu 26.04 |
+| Inventory | A file that lists those machines and how to reach them |
+| Playbook | A checklist of desired settings (packages, etc.) |
+
+Flow:
 
 ```text
-Mac (control node)
- │
- │  Ansible over SSH
- │  public-key auth as bryan
- ▼
-bryan on each node
- │
- │  become via sudo.ws when required
- ▼
-root privileges for privileged tasks
- │
- ├── node01 (192.168.0.100)
- ├── node02 (192.168.0.102)
- └── node03 (192.168.0.103)
+Your Mac
+   │
+   │  1. Read inventory (who are the nodes?)
+   │  2. SSH in as user "bryan" (key-based login)
+   │  3. Run tasks
+   │  4. If a task needs admin rights, ask for sudo password
+   │     and escalate with sudo.ws
+   ▼
+node01 (192.168.0.100)
+node02 (192.168.0.102)
+node03 (192.168.0.103)
 ```
 
-SSH connects as `bryan`, not as root. Privilege escalation is used only for tasks that need it.
+You never SSH in as `root`. Ansible logs in as `bryan`, then elevates only when a task needs it.
 
-## Inventory
+## Before you run anything
 
-File: `ansible/inventory/hosts.ini`
+1. Be on the VPN / network path that can reach `192.168.0.x` (WireGuard — see the networking docs).
+2. `cd` into the `ansible/` folder in this repo.  
+   That matters because `ansible.cfg` lives there. If you run commands from somewhere else, Ansible may not pick up the sudo settings.
+3. Have the sudo password for `bryan` ready when a playbook uses privilege escalation (`--ask-become-pass`).
+
+## Inventory (the host list)
+
+**File:** `inventory/hosts.ini`
 
 ```ini
 [homelab]
@@ -37,43 +52,54 @@ node03 ansible_host=192.168.0.103
 ansible_user=bryan
 ```
 
-| Concept | Role here |
-| --- | --- |
-| Inventory | List of managed hosts and connection settings |
-| Host alias (`node01`, …) | Logical name used in playbooks and ad-hoc commands |
-| `ansible_host` | Reachable IP for that alias |
-| Group `homelab` | Target for all three lab nodes |
-| Group vars | Shared settings for the group (`ansible_user=bryan`) |
+What this means in plain English:
 
-Node addresses are stable via ER605 DHCP reservations (not static IPs configured on the Linux hosts). See networking docs for the broader LAN design.
+- `[homelab]` is a **group** — a nickname for “all three lab PCs.”
+- `node01` is a friendly name. Playbooks can say “talk to node01” instead of typing the IP every time.
+- `ansible_host=...` is the real address Ansible connects to.
+- `ansible_user=bryan` means: log in as `bryan` on every host in that group.
 
-## SSH authentication
+Those IPs are **DHCP reservations** on the ER605 router (tied to each machine’s Ethernet MAC). The Linux boxes are not hard-coded with static IPs; the router always hands them the same address.
 
-Ansible connects with SSH public-key authentication as `bryan`. Private keys stay on the Mac and are not stored in this repository.
+## How login works
 
-## Privilege escalation
+Ansible uses normal SSH with a public key.
 
-File: `ansible/ansible.cfg`
+- Your Mac holds the private key (never put that in Git).
+- Each node has the matching public key for user `bryan`.
+- If SSH works by hand (`ssh bryan@192.168.0.100`), Ansible can usually talk to that host too.
+
+## When Ansible needs root (`become` + `sudo.ws`)
+
+Some tasks (like installing packages) need admin rights. In Ansible that is called **become**.
+
+On these Ubuntu 26.04 nodes, the normal `sudo` command is a newer rewrite called **sudo-rs**. Ansible does not get along with its password prompt, so privilege escalation times out.
+
+**Workaround in this lab:** tell Ansible to run traditional sudo instead, which is installed as `sudo.ws`.
+
+**File:** `ansible.cfg`
 
 ```ini
 [privilege_escalation]
 become_exe = sudo.ws
 ```
 
-On these Ubuntu 26.04 nodes, the default `sudo` command is **sudo-rs**. Ansible’s become prompt handling does not work reliably with that implementation. **`sudo.ws`** is the traditional sudo binary and is what Ansible uses for `become`.
+You still type the sudo password when prompted. We did **not** turn on passwordless sudo.
 
-Because `ansible.cfg` lives under `ansible/`, run Ansible commands from that directory so the config is discovered.
+## Playbooks we have today
 
-## Playbooks
+### `playbooks/check-system.yml`
 
-| Playbook | Purpose |
-| --- | --- |
-| `playbooks/check-system.yml` | Gather facts and print hostname / memory (`ansible_facts.*`) |
-| `playbooks/baseline.yml` | Ensure baseline packages are installed (`become: true`) |
+A smoke test. It connects to the nodes, gathers basic system info (“facts”), and prints:
 
-### Baseline packages
+- hostname
+- total memory (MB)
 
-Managed by `baseline.yml` with `ansible.builtin.apt` / `state: present`:
+Useful to confirm Ansible can talk to the machines without changing anything.
+
+### `playbooks/baseline.yml`
+
+The first real “make the machines look like this” playbook. It installs:
 
 - `git`
 - `vim`
@@ -81,22 +107,30 @@ Managed by `baseline.yml` with `ansible.builtin.apt` / `state: present`:
 - `tree`
 - `net-tools`
 
-### Desired state and idempotency
+It uses apt with `state: present`, which means: **these packages should be installed**. If they already are, Ansible leaves them alone.
 
-Playbooks declare the desired end state. Ansible compares that to the host and only makes changes when needed. Rerunning a playbook against hosts that already match should report no changes.
+That “only change what’s needed” behavior is **idempotency**. Running the same playbook twice is safe; the second run should report no changes if nothing drifted.
 
-## Running Ansible
+## Commands to use
 
-From the `ansible/` directory:
+Always from the `ansible/` directory:
 
 ```bash
-# Inventory / connectivity
+# Can Ansible see the inventory?
 ansible-inventory -i inventory/hosts.ini --list
+
+# Can Ansible reach every node over SSH?
 ansible homelab -i inventory/hosts.ini -m ping
 
-# Playbooks
+# Read-only check (hostname + memory)
 ansible-playbook -i inventory/hosts.ini playbooks/check-system.yml
+
+# Install / verify baseline packages (will ask for sudo password)
 ansible-playbook -i inventory/hosts.ini playbooks/baseline.yml --ask-become-pass
 ```
 
-`--ask-become-pass` is required for privilege escalation with the current sudo setup.
+Note: Ansible’s `ping` module is **not** ICMP ping. It means “SSH in, run a tiny Python check, get a successful reply.”
+
+## What’s next
+
+Kubernetes is **not** installed yet. The planned direction is **kubeadm**, and the next Ansible work is preparing these nodes for that.

@@ -1,25 +1,15 @@
-# Project Log
+# Project log
 
-Chronological notes on how this homelab was built.
+This folder is a **build journal** — what changed over time, what broke, and why decisions were made.
 
-| Source | Answers |
+It is intentionally different from the other docs:
+
+| Read this… | When you want… |
 | --- | --- |
-| **Technical docs** (`docs/hardware/`, `docs/networking/`, `docs/ansible/`, …) | How the homelab works **right now** |
-| **Project log** (this folder) | How it was **built over time** — important work, problems, fixes, and decisions |
-| **Git history** | Exact **code/config** changes |
+| `docs/hardware/`, `docs/networking/`, `docs/ansible/` | “How does the lab work **today**?” |
+| `docs/project-log/` (here) | “What did we **build**, and what went wrong along the way?” |
+| Git history | “What exact files changed in which commit?” |
 
-These should complement each other. Do not turn the project log into a copy of `git log` or a second copy of the permanent docs.
+One markdown file per month (`2026-08.md`, `2026-09.md`, …). Do not create a file per day.
 
-## Layout
-
-One file per month:
-
-```text
-docs/project-log/
-├── README.md
-├── 2026-08.md
-├── 2026-09.md
-└── ...
-```
-
-Older narrative notes may still live elsewhere (for example `docs/networking/learnings.md`). New chronological work belongs here.
+Older deep-dive notes for the network still live in `docs/networking/learnings.md`. New journal entries go here.
