@@ -1,0 +1,12 @@
+- name: Check homelab systems
+  hosts: homelab
+  gather_facts: true
+
+  tasks:
+    - name: Show hostname
+      ansible.builtin.debug:
+        var: ansible_facts.hostname
+
+    - name: Show total memory
+      ansible.builtin.debug:
+        var: ansible_facts.memtotal_mb

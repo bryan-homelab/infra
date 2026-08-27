@@ -1,0 +1,16 @@
+- name: Configure homelab baseline packages
+  hosts: homelab
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Ensure baseline packages are installed
+      ansible.builtin.apt:
+        name:
+          - git
+          - vim
+          - unzip
+          - tree
+          - net-tools
+        state: present
+        update_cache: true
